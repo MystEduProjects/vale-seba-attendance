@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { Row } from "./types";
+import { formatValue } from "./utils/functions";
+import { exportToExcel } from "./utils/excel";
 
 const BASE_URL = "https://marriage-page-api.vercel.app";
 const endpoint = "/people"
-
-type Row = Record<string, unknown>;
 
 // ── Column label map ──────────────────────────────────────────────
 const columns: Array<string> = [
@@ -23,23 +24,16 @@ const columns: Array<string> = [
 const COLUMN_LABELS: Record<string, string> = {
   name: "Nombre",
   availableEscort: "Acompañante Disponible?",
-  allergies: "Alergias",
+  allergies: "Alergias/Restricciones",
   attend: "Asiste?",
   escort: "Nombre Acompañante",
-  escortAllergies: "Alergias Acompañante",
+  escortAllergies: "Alergias/Restricciones Acompañante",
   escortMenu: "Menu Acompañante",
   menu: "Menu",
   wantsEscort: "Quiere Acompañante?"
 };
 
 // ── Helpers ───────────────────────────────────────────────────────
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return "-";
-  if (typeof value === "boolean") return value ? "Si" : "No";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
-}
-
 function StatusBadge({ value }: { value: string }) {
   const lower = value.toLowerCase();
   const color =
@@ -157,8 +151,9 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
 
   return (
     <div>
-      {/* Search + count */}
+      {/* Search + count + export */}
       <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+
         <div className="relative w-full sm:w-72">
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
@@ -171,6 +166,17 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
             className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition"
           />
         </div>
+
+        <button
+          onClick={() => exportToExcel(sorted, columns, COLUMN_LABELS)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-200 text-white/70 hover:text-white hover:bg-white/10 border border-white/30 hover:border-white/60 transition"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          Descargar Excel
+        </button>
+
         <p className="text-xs text-slate-500">
           <span className="text-slate-300 font-medium">{filtered.length}</span>
           {" "}/ {rows.length} registros
