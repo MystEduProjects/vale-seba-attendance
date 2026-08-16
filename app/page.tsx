@@ -3,54 +3,26 @@
 import { useEffect, useState, useMemo } from "react";
 
 const BASE_URL = "https://marriage-page-api.vercel.app";
+const endpoint = "/people"
 
 type Row = Record<string, unknown>;
 
-// ── Tab definitions ──────────────────────────────────────────────
-const TABS = [
-  {
-    key: "people",
-    label: "Personas",
-    endpoint: "/people",
-    arrayKey: "people",
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
-  },
-  {
-    key: "gifts",
-    label: "Lista de regalos",
-    endpoint: "/gifts",
-    arrayKey: "gifts",
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
-      </svg>
-    ),
-  },
-  {
-    key: "purchases",
-    label: "Regalos comprados",
-    endpoint: "/purchases",
-    arrayKey: "purchases",
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
-] as const;
-
-type TabKey = (typeof TABS)[number]["key"];
-
 // ── Column label map ──────────────────────────────────────────────
+const columns: Array<string> = [
+  'name',
+  'attend',
+  'menu',
+  'allergies',
+  'availableEscort',
+  'wantsEscort',
+  'escort',
+  'escortMenu',
+  'escortAllergies',
+]
+
 const COLUMN_LABELS: Record<string, string> = {
-  _id: "ID",
   name: "Nombre",
   availableEscort: "Acompañante Disponible?",
-  __v: "_",
   allergies: "Alergias",
   attend: "Asiste?",
   escort: "Nombre Acompañante",
@@ -63,7 +35,7 @@ const COLUMN_LABELS: Record<string, string> = {
 // ── Helpers ───────────────────────────────────────────────────────
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return "-";
-  if (typeof value === "boolean") return value ? "Sí" : "No";
+  if (typeof value === "boolean") return value ? "Si" : "No";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
@@ -122,13 +94,6 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [endpoint, arrayKey]);
-
-  const columns = useMemo(() => {
-    if (!rows.length) return [];
-    const keys = new Set<string>();
-    rows.forEach((r) => Object.keys(r).forEach((k) => keys.add(k)));
-    return Array.from(keys);
-  }, [rows]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
@@ -226,7 +191,7 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
                     className="px-4 py-3 text-left text-xs font-medium text-slate-400 whitespace-nowrap cursor-pointer hover:text-slate-200 select-none group transition"
                   >
                     <div className="flex items-center gap-1.5">
-                      {COLUMN_LABELS[col] ?? col}
+                      {COLUMN_LABELS[col] ?? null}
                       {sortKey === col ? (
                         <span className="text-violet-400">{sortDir === "asc" ? "↑" : "↓"}</span>
                       ) : (
@@ -286,50 +251,12 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
 
 // ── Page ──────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>("people");
-  const current = TABS.find((t) => t.key === activeTab)!;
-
   return (
     <div className="min-h-screen bg-[#0f1117] text-slate-100 font-sans">
-      {/* Header */}
-      <header className="border-b border-white/5 bg-[#0f1117]/80 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/20 shrink-0">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-sm font-semibold text-white tracking-wide">Panel de boda</h1>
-            <p className="text-xs text-slate-500">marriage-page-api · {current.endpoint}</p>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Tabs */}
-        <div className="flex gap-1 mb-8 bg-white/[0.03] border border-white/5 rounded-xl p-1 w-fit">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === tab.key
-                  ? "bg-violet-600 text-white shadow shadow-violet-500/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Table panel */}
+      <main className="px-12 py-8">
         <DataTable
-          key={activeTab}
-          endpoint={current.endpoint}
-          arrayKey={current.arrayKey}
+          endpoint={endpoint}
+          arrayKey={'people'}
         />
       </main>
     </div>
