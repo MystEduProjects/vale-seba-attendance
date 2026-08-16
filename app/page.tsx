@@ -47,29 +47,22 @@ type TabKey = (typeof TABS)[number]["key"];
 
 // ── Column label map ──────────────────────────────────────────────
 const COLUMN_LABELS: Record<string, string> = {
-  id: "ID",
+  _id: "ID",
   name: "Nombre",
-  first_name: "Nombre",
-  last_name: "Apellido",
-  email: "Email",
-  phone: "Teléfono",
-  age: "Edad",
-  gender: "Género",
-  status: "Estado",
-  price: "Precio",
-  quantity: "Cantidad",
-  description: "Descripción",
-  gift_id: "ID Regalo",
-  person_id: "ID Persona",
-  purchased_by: "Comprado por",
-  purchased_at: "Fecha compra",
-  created_at: "Creado",
-  updated_at: "Actualizado",
+  availableEscort: "Acompañante Disponible?",
+  __v: "_",
+  allergies: "Alergias",
+  attend: "Asiste?",
+  escort: "Nombre Acompañante",
+  escortAllergies: "Alergias Acompañante",
+  escortMenu: "Menu Acompañante",
+  menu: "Menu",
+  wantsEscort: "Quiere Acompañante?"
 };
 
 // ── Helpers ───────────────────────────────────────────────────────
 function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "-";
   if (typeof value === "boolean") return value ? "Sí" : "No";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
