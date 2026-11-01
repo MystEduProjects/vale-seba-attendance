@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { Row } from "./types";
-import { formatValue } from "./utils/functions";
+import { formatValue, normalizeSearchText } from "./utils/functions";
 import { exportToExcel } from "./utils/excel";
 
 const BASE_URL = "https://marriage-page-api.vercel.app";
@@ -55,21 +55,53 @@ function StatusBadge({ value }: { value: string }) {
 const isStatusCol = (col: string) =>
   col.toLowerCase().includes("status") || col.toLowerCase().includes("estado");
 
+function getRowId(row: Row): string {
+  return String(row._id ?? row.id ?? "");
+}
+
+function EditableCell({ value, onChange }: { value: unknown; onChange: (value: unknown) => void }) {
+  if (typeof value === "boolean") {
+    return (
+      <input
+        type="checkbox"
+        checked={value}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 accent-violet-500"
+      />
+    );
+  }
+
+  const textValue = value === null || value === undefined ? "" : formatValue(value);
+  return (
+    <input
+      type="text"
+      value={textValue}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-full min-w-32 rounded-md border border-violet-500/50 bg-white/10 px-2 py-1 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-violet-500/50"
+    />
+  );
+}
+
 // ── DataTable ─────────────────────────────────────────────────────
 function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string }) {
   const [rows, setRows] = useState<Row[]>([]);
+  const [draftRows, setDraftRows] = useState<Row[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const PAGE_SIZE = 15;
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     setRows([]);
+    setDraftRows(null);
+    setSaveError(null);
     setSearch("");
     setSortKey(null);
     setPage(1);
@@ -89,13 +121,16 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
       .finally(() => setLoading(false));
   }, [endpoint, arrayKey]);
 
+  const isEditing = draftRows !== null;
+  const workingRows = draftRows ?? rows;
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const q = search.toLowerCase();
-    return rows.filter((r) =>
-      columns.some((col) => formatValue(r[col]).toLowerCase().includes(q))
+    if (!search.trim()) return workingRows;
+    const q = normalizeSearchText(search);
+    return workingRows.filter((r) =>
+      columns.some((col) => normalizeSearchText(formatValue(r[col])).includes(q))
     );
-  }, [rows, search, columns]);
+  }, [workingRows, search, columns]);
 
   const sorted = useMemo(() => {
     if (!sortKey) return filtered;
@@ -108,6 +143,76 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const startEditing = () => {
+    setDraftRows(rows.map((row) => ({ ...row })));
+    setError(null);
+    setSaveError(null);
+  };
+
+  const cancelEditing = () => {
+    if (saving) return;
+    setDraftRows(null);
+    setSaveError(null);
+  };
+
+  const updateDraftValue = (rowId: string, column: string, value: unknown) => {
+    setDraftRows((currentRows) =>
+      currentRows?.map((row) => getRowId(row) === rowId ? { ...row, [column]: value } : row) ?? null
+    );
+  };
+
+  const saveChanges = async () => {
+    if (!draftRows) return;
+
+    const changedRows = draftRows.filter((draftRow, index) =>
+      JSON.stringify(draftRow) !== JSON.stringify(rows[index])
+    );
+
+    if (!changedRows.length) {
+      setDraftRows(null);
+      return;
+    }
+
+    setSaving(true);
+    setSaveError(null);
+
+    try {
+      const updatedRows = await Promise.all(changedRows.map(async (draftRow) => {
+        const id = getRowId(draftRow);
+        if (!id) throw new Error(`La persona "${formatValue(draftRow.name)}" no tiene un ID válido.`);
+        const originalRow = rows.find((row) => getRowId(row) === id);
+        if (!originalRow) throw new Error("No se encontró la fila original.");
+
+        const updateData = Object.fromEntries(
+          columns
+            .filter((column) => JSON.stringify(draftRow[column]) !== JSON.stringify(originalRow[column]))
+            .map((column) => [column, draftRow[column]])
+        );
+
+        const response = await fetch(`${BASE_URL}${endpoint}/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        });
+
+        if (!response.ok) {
+          throw new Error(`No se pudo actualizar "${formatValue(draftRow.name)}" (Error ${response.status}).`);
+        }
+
+        return await response.json() as Row;
+      }));
+
+      setRows((currentRows) => currentRows.map((row) =>
+        updatedRows.find((updatedRow) => getRowId(updatedRow) === getRowId(row)) ?? row
+      ));
+      setDraftRows(null);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "No se pudieron guardar los cambios.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSort = (key: string) => {
     if (sortKey === key) {
@@ -167,21 +272,51 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
           />
         </div>
 
-        <button
-          onClick={() => exportToExcel(sorted, columns, COLUMN_LABELS)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-200 text-white/70 hover:text-white hover:bg-white/10 border border-white/30 hover:border-white/60 transition"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-          </svg>
-          Descargar Excel
-        </button>
+        {isEditing ? (
+          <>
+            <button
+              onClick={cancelEditing}
+              disabled={saving}
+              className="px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-white/10 border border-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={saveChanges}
+              disabled={saving}
+              className="px-3 py-2 rounded-lg text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              {saving ? "Guardando…" : "Confirmar"}
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={startEditing}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-200 text-white/70 hover:text-white hover:bg-white/10 border border-white/30 hover:border-white/60 transition"
+            >
+              Editar
+            </button>
+            <button
+              onClick={() => exportToExcel(sorted, columns, COLUMN_LABELS)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-200 text-white/70 hover:text-white hover:bg-white/10 border border-white/30 hover:border-white/60 transition"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Descargar Excel
+            </button>
+          </>
+        )}
 
         <p className="text-xs text-slate-500">
           <span className="text-slate-300 font-medium">{filtered.length}</span>
-          {" "}/ {rows.length} registros
+          {" "}/ {workingRows.length} registros
         </p>
       </div>
+      {saveError && (
+        <p className="mb-4 text-sm text-red-400">{saveError}</p>
+      )}
 
       {/* Table */}
       <div className="rounded-xl border border-white/5 overflow-hidden shadow-2xl shadow-black/40">
@@ -216,7 +351,12 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
                   </td>
                   {columns.map((col) => (
                     <td key={col} className="px-4 py-3 text-slate-300 whitespace-nowrap max-w-xs truncate">
-                      {isStatusCol(col) && typeof row[col] === "string" ? (
+                      {isEditing ? (
+                        <EditableCell
+                          value={row[col]}
+                          onChange={(value) => updateDraftValue(getRowId(row), col, value)}
+                        />
+                      ) : isStatusCol(col) && typeof row[col] === "string" ? (
                         <StatusBadge value={row[col] as string} />
                       ) : (
                         <span title={formatValue(row[col])}>{formatValue(row[col])}</span>
