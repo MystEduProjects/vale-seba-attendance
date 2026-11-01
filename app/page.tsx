@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { Row } from "./types";
-import { formatValue } from "./utils/functions";
+import { formatValue, normalizeSearchText } from "./utils/functions";
 import { exportToExcel } from "./utils/excel";
 
 const BASE_URL = "https://marriage-page-api.vercel.app";
@@ -91,9 +91,9 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
-    const q = search.toLowerCase();
+    const q = normalizeSearchText(search);
     return rows.filter((r) =>
-      columns.some((col) => formatValue(r[col]).toLowerCase().includes(q))
+      columns.some((col) => normalizeSearchText(formatValue(r[col])).includes(q))
     );
   }, [rows, search, columns]);
 
