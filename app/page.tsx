@@ -55,8 +55,29 @@ function StatusBadge({ value }: { value: string }) {
 const isStatusCol = (col: string) =>
   col.toLowerCase().includes("status") || col.toLowerCase().includes("estado");
 
+const NEW_ROW_PREFIX = "new-";
+
 function getRowId(row: Row): string {
   return String(row._id ?? row.id ?? "");
+}
+
+function isNewRow(row: Row): boolean {
+  return getRowId(row).startsWith(NEW_ROW_PREFIX);
+}
+
+function createEmptyRow(): Row {
+  return {
+    id: `${NEW_ROW_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    name: "",
+    attend: false,
+    menu: "",
+    allergies: "",
+    availableEscort: false,
+    wantsEscort: false,
+    escort: "",
+    escortMenu: "",
+    escortAllergies: "",
+  };
 }
 
 function EditableCell({ value, onChange }: { value: unknown; onChange: (value: unknown) => void }) {
@@ -128,7 +149,8 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
     if (!search.trim()) return workingRows;
     const q = normalizeSearchText(search);
     return workingRows.filter((r) =>
-      columns.some((col) => normalizeSearchText(formatValue(r[col])).includes(q))
+      [getRowId(r), ...columns.map((col) => formatValue(r[col]))]
+        .some((value) => normalizeSearchText(value).includes(q))
     );
   }, [workingRows, search, columns]);
 
@@ -150,6 +172,15 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
     setSaveError(null);
   };
 
+  const startAdding = () => {
+    setDraftRows([createEmptyRow(), ...rows.map((row) => ({ ...row }))]);
+    setSearch("");
+    setSortKey(null);
+    setPage(1);
+    setError(null);
+    setSaveError(null);
+  };
+
   const cancelEditing = () => {
     if (saving) return;
     setDraftRows(null);
@@ -165,11 +196,14 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
   const saveChanges = async () => {
     if (!draftRows) return;
 
-    const changedRows = draftRows.filter((draftRow, index) =>
-      JSON.stringify(draftRow) !== JSON.stringify(rows[index])
-    );
+    const newRows = draftRows.filter(isNewRow);
+    const changedRows = draftRows.filter((draftRow) => {
+      if (isNewRow(draftRow)) return false;
+      const originalRow = rows.find((row) => getRowId(row) === getRowId(draftRow));
+      return originalRow && JSON.stringify(draftRow) !== JSON.stringify(originalRow);
+    });
 
-    if (!changedRows.length) {
+    if (!changedRows.length && !newRows.length) {
       setDraftRows(null);
       return;
     }
@@ -203,12 +237,52 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
         return await response.json() as Row;
       }));
 
-      setRows((currentRows) => currentRows.map((row) =>
-        updatedRows.find((updatedRow) => getRowId(updatedRow) === getRowId(row)) ?? row
-      ));
+      const createdRows = await Promise.all(newRows.map(async (newRow) => {
+        const createData = Object.fromEntries(columns.map((column) => [column, newRow[column]]));
+        const response = await fetch(`${BASE_URL}${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(createData),
+        });
+
+        if (!response.ok) {
+          throw new Error(`No se pudo agregar "${formatValue(newRow.name)}" (Error ${response.status}).`);
+        }
+
+        return await response.json() as Row;
+      }));
+
+      setRows((currentRows) => [
+        ...currentRows.map((row) =>
+          updatedRows.find((updatedRow) => getRowId(updatedRow) === getRowId(row)) ?? row
+        ),
+        ...createdRows,
+      ]);
       setDraftRows(null);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "No se pudieron guardar los cambios.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteRow = async (row: Row) => {
+    const id = getRowId(row);
+    if (!id || isNewRow(row) || saving) return;
+    if (!window.confirm(`¿Eliminar a "${formatValue(row.name)}"? Esta acción no se puede deshacer.`)) return;
+
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const response = await fetch(`${BASE_URL}${endpoint}/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(`No se pudo eliminar "${formatValue(row.name)}" (Error ${response.status}).`);
+      }
+      setRows((currentRows) => currentRows.filter((currentRow) => getRowId(currentRow) !== id));
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "No se pudo eliminar la persona.");
     } finally {
       setSaving(false);
     }
@@ -242,14 +316,6 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
           </svg>
         </div>
         <p className="text-red-400 font-medium text-sm">{error}</p>
-      </div>
-    );
-  }
-
-  if (!rows.length) {
-    return (
-      <div className="flex flex-col items-center justify-center py-32">
-        <p className="text-slate-400 text-sm">No se encontraron registros.</p>
       </div>
     );
   }
@@ -292,6 +358,12 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
         ) : (
           <>
             <button
+              onClick={startAdding}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 transition"
+            >
+              Añadir
+            </button>
+            <button
               onClick={startEditing}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-200 text-white/70 hover:text-white hover:bg-white/10 border border-white/30 hover:border-white/60 transition"
             >
@@ -324,6 +396,7 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-white/[0.03] border-b border-white/5">
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Acciones</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 w-10">#</th>
                 {columns.map((col) => (
                   <th
@@ -345,7 +418,16 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
             </thead>
             <tbody>
               {paginated.map((row, i) => (
-                <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
+                <tr key={getRowId(row)} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => deleteRow(row)}
+                      disabled={isEditing || saving || isNewRow(row)}
+                      className="rounded-md px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-30 transition"
+                    >
+                      Eliminar
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-xs text-slate-600 tabular-nums">
                     {(page - 1) * PAGE_SIZE + i + 1}
                   </td>
