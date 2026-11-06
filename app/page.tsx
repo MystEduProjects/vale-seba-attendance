@@ -69,7 +69,7 @@ function createEmptyRow(): Row {
   return {
     id: `${NEW_ROW_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2)}`,
     name: "",
-    attend: false,
+    attend: null,
     menu: "",
     allergies: "",
     availableEscort: false,
@@ -80,7 +80,39 @@ function createEmptyRow(): Row {
   };
 }
 
-function EditableCell({ value, onChange }: { value: unknown; onChange: (value: unknown) => void }) {
+function EditableCell({
+  column,
+  value,
+  onChange,
+}: {
+  column: string;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  if (column === "attend") {
+    const selectValue =
+      value === true || value === "true"
+        ? "true"
+        : value === false || value === "false"
+        ? "false"
+        : "";
+
+    return (
+      <select
+        value={selectValue}
+        onChange={(event) => {
+          const selectedValue = event.target.value;
+          onChange(selectedValue === "" ? null : selectedValue === "true");
+        }}
+        className="w-full min-w-32 rounded-md border border-violet-500/50 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-violet-500/50"
+      >
+        <option value="">Sin definir</option>
+        <option value="true">Si</option>
+        <option value="false">No</option>
+      </select>
+    );
+  }
+
   if (typeof value === "boolean") {
     return (
       <input
@@ -435,6 +467,7 @@ function DataTable({ endpoint, arrayKey }: { endpoint: string; arrayKey: string 
                     <td key={col} className="px-4 py-3 text-slate-300 whitespace-nowrap max-w-xs truncate">
                       {isEditing ? (
                         <EditableCell
+                          column={col}
                           value={row[col]}
                           onChange={(value) => updateDraftValue(getRowId(row), col, value)}
                         />
